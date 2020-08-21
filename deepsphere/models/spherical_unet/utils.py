@@ -7,12 +7,18 @@ from deepsphere.layers.chebyshev import *
 
 
 class SphericalChebConv(nn.Module):
-    def __init__(self, in_channels, out_channels, edge_index, edge_weight,
-                 kernel_size):
+    def __init__(self, in_channels, out_channels, kernel_size, edge_index, edge_weight,
+                 laplacian_type):
         super().__init__()
+        assert laplacian_type in ['normalized', 'combinatorial'], 'Invalid normalization'
+
         self.register_buffer("edge_index", edge_index)
-        self.register_buffer("edge_weight", edge_weight)
-        self.chebconv = DenseChebConv(in_channels, out_channels, kernel_size)
+        if edge_weight is None:
+            setattr(self, 'edge_weight', None)
+        else:
+            self.register_buffer("edge_weight", edge_weight)
+        self.chebconv = DenseChebConv(in_channels, out_channels, kernel_size,
+                                      normalization='sym' if laplacian_type == 'normalized' else None)
 
     def forward(self, x):
         x = self.chebconv(x, self.edge_index, self.edge_weight)

@@ -5,15 +5,14 @@
 import torch
 from torch import nn
 
-from deepsphere.layers.chebyshev import SphericalChebConv
-from deepsphere.models.spherical_unet.utils import SphericalChebBN, SphericalChebBNPool
+from deepsphere.models.spherical_unet.utils import SphericalChebBN, SphericalChebBNPool, SphericalChebConv
 
 
 class SphericalChebBNPoolCheb(nn.Module):
     """Building Block calling a SphericalChebBNPool block then a SphericalCheb.
     """
 
-    def __init__(self, in_channels, middle_channels, out_channels, lap, pooling, kernel_size):
+    def __init__(self, in_channels, middle_channels, out_channels, pooling, kernel_size, **kwargs):
         """Initialization.
 
         Args:
@@ -25,8 +24,8 @@ class SphericalChebBNPoolCheb(nn.Module):
             kernel_size (int, optional): polynomial degree. Defaults to 3.
         """
         super().__init__()
-        self.spherical_cheb_bn_pool = SphericalChebBNPool(in_channels, middle_channels, lap, pooling, kernel_size)
-        self.spherical_cheb = SphericalChebConv(middle_channels, out_channels, lap, kernel_size)
+        self.spherical_cheb_bn_pool = SphericalChebBNPool(in_channels, middle_channels, pooling, kernel_size, **kwargs)
+        self.spherical_cheb = SphericalChebConv(middle_channels, out_channels, kernel_size, **kwargs)
 
     def forward(self, x):
         """Forward Pass.
@@ -48,7 +47,7 @@ class SphericalChebBNPoolConcat(nn.Module):
     and calling a SphericalChebBN block.
     """
 
-    def __init__(self, in_channels, out_channels, lap, pooling, kernel_size):
+    def __init__(self, in_channels, out_channels, pooling, kernel_size, **kwargs):
         """Initialization.
 
         Args:
@@ -59,8 +58,8 @@ class SphericalChebBNPoolConcat(nn.Module):
             kernel_size (int, optional): polynomial degree. Defaults to 3.
         """
         super().__init__()
-        self.spherical_cheb_bn_pool = SphericalChebBNPool(in_channels, out_channels, lap, pooling, kernel_size)
-        self.spherical_cheb_bn = SphericalChebBN(in_channels + out_channels, out_channels, lap, kernel_size)
+        self.spherical_cheb_bn_pool = SphericalChebBNPool(in_channels, out_channels, pooling, kernel_size, **kwargs)
+        self.spherical_cheb_bn = SphericalChebBN(in_channels + out_channels, out_channels, kernel_size, **kwargs)
 
     def forward(self, x, concat_data):
         """Forward Pass.
@@ -84,7 +83,8 @@ class Decoder(nn.Module):
     """The decoder of the Spherical UNet.
     """
 
-    def __init__(self, unpooling, laps, kernel_size):
+    def __init__(self, unpooling, kernel_size, edge_index_list: list, edge_weight_list: list,
+                 laplacian_type):
         """Initialization.
 
         Args:
@@ -94,13 +94,27 @@ class Decoder(nn.Module):
         super().__init__()
         self.unpooling = unpooling
         self.kernel_size = kernel_size
-        self.dec_l1 = SphericalChebBNPoolConcat(512, 512, laps[1], self.unpooling, self.kernel_size)
-        self.dec_l2 = SphericalChebBNPoolConcat(512, 256, laps[2], self.unpooling, self.kernel_size)
-        self.dec_l3 = SphericalChebBNPoolConcat(256, 128, laps[3], self.unpooling, self.kernel_size)
-        self.dec_l4 = SphericalChebBNPoolConcat(128, 64, laps[4], self.unpooling, self.kernel_size)
-        self.dec_l5 = SphericalChebBNPoolCheb(64, 32, 3, laps[5], self.unpooling, self.kernel_size)
-        # Switch from Logits to Probabilities if evaluating model
-        self.softmax = nn.Softmax(dim=2)
+        assert len(edge_index_list) == len(edge_weight_list) == 5
+        self.dec_l1 = SphericalChebBNPoolConcat(512, 512, self.unpooling, self.kernel_size,
+                                                edge_index=edge_index_list[0],
+                                                edge_weight=edge_weight_list[0],
+                                                laplacian_type=laplacian_type)
+        self.dec_l2 = SphericalChebBNPoolConcat(512, 256, self.unpooling, self.kernel_size,
+                                                edge_index=edge_index_list[1],
+                                                edge_weight=edge_weight_list[1],
+                                                laplacian_type=laplacian_type)
+        self.dec_l3 = SphericalChebBNPoolConcat(256, 128, self.unpooling, self.kernel_size,
+                                                edge_index=edge_index_list[2],
+                                                edge_weight=edge_weight_list[2],
+                                                laplacian_type=laplacian_type)
+        self.dec_l4 = SphericalChebBNPoolConcat(128, 64, self.unpooling, self.kernel_size,
+                                                edge_index=edge_index_list[3],
+                                                edge_weight=edge_weight_list[3],
+                                                laplacian_type=laplacian_type)
+        self.dec_l5 = SphericalChebBNPoolCheb(64, 32, 3, self.unpooling, self.kernel_size,
+                                              edge_index=edge_index_list[4],
+                                              edge_weight=edge_weight_list[4],
+                                              laplacian_type=laplacian_type)
 
     def forward(self, x_enc0, x_enc1, x_enc2, x_enc3, x_enc4):
         """Forward Pass.
@@ -117,5 +131,5 @@ class Decoder(nn.Module):
         x = self.dec_l4(x, x_enc4)
         x = self.dec_l5(x)
         if not self.training:
-            x = self.softmax(x)
+            x = x.softmax(2)
         return x

@@ -11,7 +11,8 @@ from deepsphere.layers.samplings.healpix_pool_unpool import Healpix
 from deepsphere.layers.samplings.icosahedron_pool_unpool import Icosahedron
 from deepsphere.models.spherical_unet.decoder import Decoder
 from deepsphere.models.spherical_unet.encoder import Encoder, EncoderTemporalConv
-from deepsphere.utils.laplacian_funcs import get_equiangular_laplacians, get_healpix_laplacians, get_icosahedron_laplacians
+# from deepsphere.utils.laplacian_funcs import get_equiangular_laplacians, get_healpix_laplacians, get_icosahedron_laplacians
+from deepsphere.utils.index_weight_funcs import get_icosahedron_weights
 
 
 class SphericalUNet(nn.Module):
@@ -31,20 +32,23 @@ class SphericalUNet(nn.Module):
         super().__init__()
         self.ratio = ratio
         self.kernel_size = kernel_size
+
         if pooling_class == "icosahedron":
             self.pooling_class = Icosahedron()
-            self.laps = get_icosahedron_laplacians(N, depth, laplacian_type)
+            edge_index_list, edge_weight_list = get_icosahedron_weights(N, depth)
         elif pooling_class == "healpix":
             self.pooling_class = Healpix()
-            self.laps = get_healpix_laplacians(N, depth, laplacian_type)
+            raise ValueError("Error: sampling method healpix currently not support.")
         elif pooling_class == "equiangular":
             self.pooling_class = Equiangular()
-            self.laps = get_equiangular_laplacians(N, depth, self.ratio, laplacian_type)
+            raise ValueError("Error: sampling method equiangular currently not support.")
         else:
             raise ValueError("Error: sampling method unknown. Please use icosahedron, healpix or equiangular.")
 
-        self.encoder = Encoder(self.pooling_class.pooling, self.laps, self.kernel_size)
-        self.decoder = Decoder(self.pooling_class.unpooling, self.laps, self.kernel_size)
+        self.encoder = Encoder(self.pooling_class.pooling, self.kernel_size,
+                               edge_index_list, edge_weight_list, laplacian_type)
+        self.decoder = Decoder(self.pooling_class.unpooling, self.kernel_size,
+                               edge_index_list[1:], edge_weight_list[1:], laplacian_type)
 
     def forward(self, x):
         """Forward Pass.
@@ -121,7 +125,8 @@ class SphericalUNetTemporalConv(SphericalUNet):
         """
         super().__init__(pooling_class, N, depth, laplacian_type, kernel_size, ratio)
         self.sequence_length = sequence_length
-        self.encoder = EncoderTemporalConv(self.pooling_class.pooling, self.laps, self.sequence_length, self.kernel_size)
+        self.encoder = EncoderTemporalConv(self.pooling_class.pooling, self.laps, self.sequence_length,
+                                           self.kernel_size)
         self.decoder = Decoder(self.pooling_class.unpooling, self.laps, self.kernel_size)
 
     def forward(self, x):
@@ -136,3 +141,8 @@ class SphericalUNetTemporalConv(SphericalUNet):
         x_encoder = self.encoder(x)
         output = self.decoder(*x_encoder)
         return output
+
+
+if __name__ == '__main__':
+    m = SphericalUNet("icosahedron", 10242, 6, 'combinatorial', 5)
+    print(m)

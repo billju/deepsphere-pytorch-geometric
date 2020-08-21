@@ -5,6 +5,7 @@ from torch import nn
 from torch_geometric import nn as geo_nn
 from deepsphere.models.spherical_unet.utils import SphericalChebBN, SphericalChebBNPool, SphericalChebConv
 
+
 class SphericalChebBN2(nn.Module):
     """Building Block made of 2 Building Blocks (convolution, batchnorm, activation).
     """
@@ -77,7 +78,7 @@ class Encoder(nn.Module):
     """Encoder for the Spherical UNet.
     """
 
-    def __init__(self, pooling, kernel_size, edge_index_list: list, edge_weight_list: list):
+    def __init__(self, pooling, kernel_size, edge_index_list: list, edge_weight_list: list, laplacian_type):
         """Initialization.
 
         Args:
@@ -91,22 +92,28 @@ class Encoder(nn.Module):
         self.kernel_size = kernel_size
         self.enc_l5 = SphericalChebBN2(16, 32, 64, self.kernel_size,
                                        edge_index=edge_index_list[5],
-                                       edge_weight=edge_weight_list[5])
+                                       edge_weight=edge_weight_list[5],
+                                       laplacian_type=laplacian_type)
         self.enc_l4 = SphericalChebBNPool(64, 128, self.pooling, self.kernel_size,
-                                       edge_index=edge_index_list[4],
-                                       edge_weight=edge_weight_list[4])
+                                          edge_index=edge_index_list[4],
+                                          edge_weight=edge_weight_list[4],
+                                          laplacian_type=laplacian_type)
         self.enc_l3 = SphericalChebBNPool(128, 256, self.pooling, self.kernel_size,
-                                       edge_index=edge_index_list[3],
-                                       edge_weight=edge_weight_list[3])
+                                          edge_index=edge_index_list[3],
+                                          edge_weight=edge_weight_list[3],
+                                          laplacian_type=laplacian_type)
         self.enc_l2 = SphericalChebBNPool(256, 512, self.pooling, self.kernel_size,
-                                       edge_index=edge_index_list[2],
-                                       edge_weight=edge_weight_list[2])
+                                          edge_index=edge_index_list[2],
+                                          edge_weight=edge_weight_list[2],
+                                          laplacian_type=laplacian_type)
         self.enc_l1 = SphericalChebBNPool(512, 512, self.pooling, self.kernel_size,
-                                       edge_index=edge_index_list[1],
-                                       edge_weight=edge_weight_list[1])
+                                          edge_index=edge_index_list[1],
+                                          edge_weight=edge_weight_list[1],
+                                          laplacian_type=laplacian_type)
         self.enc_l0 = SphericalChebPool(512, 512, self.pooling, self.kernel_size,
-                                       edge_index=edge_index_list[0],
-                                       edge_weight=edge_weight_list[0])
+                                        edge_index=edge_index_list[0],
+                                        edge_weight=edge_weight_list[0],
+                                        laplacian_type=laplacian_type)
 
     def forward(self, x, edge_list: list, edge_weight_list: list):
         """Forward Pass.
@@ -148,5 +155,6 @@ class EncoderTemporalConv(Encoder):
             self.enc_l5.out_channels,
             kernel_size,
             edge_index=kwargs['edge_index_list'][-1],
-            edge_weight=kwargs['edge_weight_list'][-1]
+            edge_weight=kwargs['edge_weight_list'][-1],
+            laplacian_type=kwargs['laplacian_type']
         )
