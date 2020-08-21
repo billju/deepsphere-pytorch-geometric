@@ -1,7 +1,7 @@
 """Transformations for samples of atmospheric rivers and tropical cyclones dataset.
 """
 import torch
-
+from torch_geometric.data import Data
 
 class ToTensor:
     """Convert raw data and labels to PyTorch tensor.
@@ -48,7 +48,7 @@ class Normalize:
         self.mean = torch.from_numpy(mean)
         self.std = torch.from_numpy(std)
 
-    def __call__(self, item):
+    def __call__(self, item: Data):
         """
         Args:
             item (:obj:`torch.Tensor`): Sample of size (vertices, features) to be normalized on its features.
@@ -56,7 +56,8 @@ class Normalize:
         Returns:
             :obj:`torch.Tensor`: Normalized input tensor.
         """
-        return (item - self.mean) / self.std
+        item.x = (item.x - self.mean) / self.std
+        return item
 
 
 class Stack:

@@ -122,8 +122,8 @@ class ARTCTemporaldataset(ARTCDataset):
 
 if __name__ == '__main__':
     from torch_geometric.data import DenseDataLoader
-    dataset = ARTCDataset('saved/raw/data_5_all')
-    loader = DenseDataLoader(dataset, 4, shuffle=True)
+    dataset = ARTCDataset('/home/joey_yu/Datasets/data_5_all')
+    loader = DenseDataLoader(dataset[:100], 4, shuffle=True, num_workers=0)
 
     print(len(dataset))
     for x in loader:

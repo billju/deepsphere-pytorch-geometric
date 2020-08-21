@@ -1,23 +1,25 @@
 """Example script for running DeepSphere U-Net on reduced AR_TC dataset.
 """
 
-
 import numpy as np
 import torch
-from ignite.contrib.handlers.param_scheduler import create_lr_scheduler_with_warmup
-from ignite.contrib.handlers.tensorboard_logger import GradsHistHandler, OptimizerParamsHandler, OutputHandler, TensorboardLogger, WeightsHistHandler
-from ignite.engine import Engine, Events, create_supervised_evaluator
-from ignite.handlers import EarlyStopping, TerminateOnNan
-from ignite.metrics import EpochMetric
-from sklearn.model_selection import train_test_split
 from torch import nn, optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
-from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from torchvision import transforms
+
+from ignite.contrib.handlers.param_scheduler import create_lr_scheduler_with_warmup
+from ignite.contrib.handlers.tensorboard_logger import GradsHistHandler, OptimizerParamsHandler, OutputHandler, \
+    TensorboardLogger, WeightsHistHandler
+from ignite.engine import Engine, Events, create_supervised_evaluator
+from ignite.handlers import EarlyStopping, TerminateOnNan
+from ignite.metrics import EpochMetric, RunningAverage
+from ignite.contrib.handlers import ProgressBar
+
+from sklearn.model_selection import train_test_split
+from torch_geometric.data import DenseDataLoader
 
 from deepsphere.data.datasets.dataset import ARTCDataset
-from deepsphere.data.transforms.transforms import Normalize, Permute, ToTensor
+from deepsphere.data.transforms.transforms import Normalize
 from deepsphere.models.spherical_unet.unet_model import SphericalUNet
 from deepsphere.utils.initialization import init_device
 from deepsphere.utils.parser import create_parser, parse_config
@@ -86,7 +88,8 @@ def add_tensorboard(engine_train, optimizer, model, log_dir):
 
     # Attach the logger to the trainer to log training loss at each iteration
     tb_logger.attach(
-        engine_train, log_handler=OutputHandler(tag="training", output_transform=lambda loss: {"loss": loss}), event_name=Events.ITERATION_COMPLETED
+        engine_train, log_handler=OutputHandler(tag="training", output_transform=lambda loss: {"loss": loss}),
+        event_name=Events.ITERATION_COMPLETED
     )
 
     # Attach the logger to the trainer to log optimizer's parameters, e.g. learning rate at each iteration
@@ -112,22 +115,17 @@ def get_dataloaders(parser_args):
     """
 
     path_to_data = parser_args.path_to_data
-    download = parser_args.download
     partition = parser_args.partition
     seed = parser_args.seed
     means_path = parser_args.means_path
     stds_path = parser_args.stds_path
 
-    data = ARTCDataset(path=path_to_data, download=download, indices=None, transform_data=None, transform_labels=None)
-
-    train_indices, temp = train_test_split(data.indices, train_size=partition[0], random_state=seed)
+    data = ARTCDataset(path=path_to_data)
+    train_indices, temp = train_test_split(data.files, train_size=partition[0], random_state=seed)
     val_indices, _ = train_test_split(temp, test_size=partition[2] / (partition[1] + partition[2]), random_state=seed)
 
     if (means_path is None) or (stds_path is None):
-        transform_data_stats = transforms.Compose([ToTensor()])
-        train_set_stats = ARTCDataset(
-            path=path_to_data, download=download, indices=train_indices, transform_data=transform_data_stats, transform_labels=None
-        )
+        train_set_stats = ARTCDataset(path=path_to_data, indices=train_indices)
         means, stds = stats_extractor(train_set_stats)
         np.save("./means.npy", means)
         np.save("./stds.npy", stds)
@@ -138,17 +136,15 @@ def get_dataloaders(parser_args):
         except ValueError:
             print("No means or stds were provided. Or path names incorrect.")
 
-    transform_data = transforms.Compose([ToTensor(), Permute(), Normalize(mean=means, std=stds)])
-    transform_labels = transforms.Compose([ToTensor(), Permute()])
     train_set = ARTCDataset(
-        path=path_to_data, download=download, indices=train_indices, transform_data=transform_data, transform_labels=transform_labels
+        path=path_to_data, indices=train_indices, transform=Normalize(means, stds)
     )
     validation_set = ARTCDataset(
-        path=path_to_data, download=download, indices=val_indices, transform_data=transform_data, transform_labels=transform_labels
+        path=path_to_data, indices=val_indices, transform=Normalize(means, stds)
     )
 
-    dataloader_train = DataLoader(train_set, batch_size=parser_args.batch_size, shuffle=True, num_workers=12)
-    dataloader_validation = DataLoader(validation_set, batch_size=parser_args.batch_size, shuffle=False, num_workers=12)
+    dataloader_train = DenseDataLoader(train_set, batch_size=parser_args.batch_size, shuffle=True, num_workers=4)
+    dataloader_validation = DenseDataLoader(validation_set, batch_size=parser_args.batch_size, shuffle=False, num_workers=4)
     return dataloader_train, dataloader_validation
 
 
@@ -162,10 +158,13 @@ def main(parser_args):
     dataloader_train, dataloader_validation = get_dataloaders(parser_args)
     criterion = nn.CrossEntropyLoss()
 
-    unet = SphericalUNet(parser_args.pooling_class, parser_args.n_pixels, parser_args.depth, parser_args.laplacian_type, parser_args.kernel_size)
+    unet = SphericalUNet(parser_args.pooling_class, parser_args.n_pixels, parser_args.depth, parser_args.laplacian_type,
+                         parser_args.kernel_size)
+    #unet = torch.jit.script(unet)
     unet, device = init_device(parser_args.device, unet)
     lr = parser_args.learning_rate
     optimizer = optim.Adam(unet.parameters(), lr=lr)
+    print(sum(p.numel() for p in unet.parameters() if p.requires_grad))
 
     def trainer(engine, batch):
         """Train Function to define train engine.
@@ -179,7 +178,9 @@ def main(parser_args):
             :obj:`torch.tensor` : train loss for that batch and epoch
         """
         unet.train()
-        data, labels = batch
+        optimizer.zero_grad()
+
+        data, labels = batch.x, batch.y
         labels = labels.to(device)
         data = data.to(device)
         output = unet(data)
@@ -190,17 +191,19 @@ def main(parser_args):
         labels = labels.view(B_labels * V_labels, C_labels).max(1)[1]
 
         loss = criterion(output, labels)
-        optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        return loss.item()
+        return {'loss': loss.item()}
 
     writer = SummaryWriter(parser_args.tensorboard_path)
 
     engine_train = Engine(trainer)
 
+    RunningAverage(output_transform=lambda x: x['loss']).attach(engine_train, 'loss')
+
     engine_validate = create_supervised_evaluator(
-        model=unet, metrics={"AP": EpochMetric(average_precision_compute_fn)}, device=device, output_transform=validate_output_transform
+        model=unet, metrics={"AP": EpochMetric(average_precision_compute_fn)}, device=device,
+        output_transform=validate_output_transform
     )
 
     engine_train.add_event_handler(Events.EPOCH_STARTED, lambda x: print("Starting Epoch: {}".format(x.state.epoch)))
@@ -247,7 +250,8 @@ def main(parser_args):
         print("mAP:", mean_average_precision)
         writer.add_scalars(
             "metrics",
-            {"mean average precision (AR+TC)": mean_average_precision, "AR average precision": ap[2], "TC average precision": ap[1]},
+            {"mean average precision (AR+TC)": mean_average_precision, "AR average precision": ap[2],
+             "TC average precision": ap[1]},
             engine_train.state.epoch,
         )
         writer.close()
@@ -262,14 +266,19 @@ def main(parser_args):
     engine_validate.add_event_handler(Events.EPOCH_COMPLETED, scheduler)
 
     earlystopper = EarlyStopping(
-        patience=parser_args.earlystopping_patience, score_function=lambda x: -x.state.metrics["AP"][1], trainer=engine_train
+        patience=parser_args.earlystopping_patience, score_function=lambda x: -x.state.metrics["AP"][1],
+        trainer=engine_train
     )
     engine_validate.add_event_handler(Events.EPOCH_COMPLETED, earlystopper)
 
     add_tensorboard(engine_train, optimizer, unet, log_dir=parser_args.tensorboard_path)
 
+    pbar = ProgressBar()
+    pbar.attach(engine_train, metric_names=['loss'])
+
     engine_train.run(dataloader_train, max_epochs=parser_args.n_epochs)
 
+    pbar.close()
     torch.save(unet.state_dict(), parser_args.model_save_path + "unet_state.pt")
 
 

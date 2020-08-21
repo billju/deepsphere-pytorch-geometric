@@ -5,6 +5,7 @@
 import torch
 from torch import nn
 from torchvision import transforms
+from torch_geometric.nn import DataParallel
 
 from deepsphere.data.datasets.dataset import ARTCTemporaldataset
 from deepsphere.data.transforms.transforms import Stack

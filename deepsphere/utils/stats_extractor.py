@@ -2,9 +2,10 @@
 """
 import numpy as np
 import torch
+from torch_geometric.data import Dataset
 
 
-def stats_extractor(dataset):
+def stats_extractor(dataset: Dataset):
     """Iterates over a dataset object
     It is iterated over so as to calculate the mean and standard deviation.
 
@@ -15,22 +16,20 @@ def stats_extractor(dataset):
         :obj:numpy.array, :obj:numpy.array : computed means and standard deviation
     """
 
-    F, V = torch.Tensor(dataset[0][0]).shape
+    V, F = dataset[0].x.shape
     summing = torch.zeros(F)
     square_summing = torch.zeros(F)
     total = 0
 
     for item in dataset:
-        item = torch.Tensor(item[0])
-        summing += torch.sum(item, dim=1)
-        total += V
+        summing += torch.mean(item.x, dim=0)
+        total += 1
 
-    means = torch.unsqueeze(summing / total, dim=1)
+    means = summing / total
 
     for item in dataset:
-        item = torch.Tensor(item[0])
-        square_summing += torch.sum((item - means) ** 2, dim=1)
+        square_summing += torch.sum((item.x - means) ** 2, dim=0)
 
-    stds = np.sqrt(square_summing / (total - 1))
+    stds = np.sqrt(square_summing / (total * V - 1))
 
-    return torch.squeeze(means, dim=1).numpy(), stds.numpy()
+    return means.numpy(), stds.numpy()

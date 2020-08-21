@@ -1,7 +1,7 @@
 """Layers used in both Encoder and Decoder.
 """
 # pylint: disable=W0221
-import torch.nn.functional as F
+import torch
 from torch import nn
 from deepsphere.layers.chebyshev import *
 
@@ -17,11 +17,14 @@ class SphericalChebConv(nn.Module):
             setattr(self, 'edge_weight', None)
         else:
             self.register_buffer("edge_weight", edge_weight)
+
+        self.register_buffer('lambda_max', torch.tensor(2., dtype=torch.float32))
         self.chebconv = DenseChebConv(in_channels, out_channels, kernel_size,
                                       normalization='sym' if laplacian_type == 'normalized' else None)
 
+
     def forward(self, x):
-        x = self.chebconv(x, self.edge_index, self.edge_weight)
+        x = self.chebconv(x, self.edge_index, self.edge_weight, self.lambda_max)
         return x
 
 

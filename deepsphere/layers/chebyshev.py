@@ -9,11 +9,14 @@ from torch import nn
 from torch_sparse import SparseTensor
 from torch_geometric.nn import ChebConv
 
+from typing import Optional
+from torch_geometric.typing import OptTensor
 
 __all__ = ['DenseChebConv']
 
 class DenseChebConv(ChebConv):
-    def forward(self, x, edge_index, edge_weight=None, lambda_max=None, **kwargs):
+    def forward(self, x, edge_index, edge_weight: OptTensor = None,
+                lambda_max: OptTensor = None, **kwargs):
         if self.normalization != 'sym' and lambda_max is None:
             raise ValueError('You need to pass `lambda_max` to `forward() in`'
                              'case the normalization is non-symmetric.')

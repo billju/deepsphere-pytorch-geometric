@@ -115,7 +115,7 @@ class Encoder(nn.Module):
                                         edge_weight=edge_weight_list[0],
                                         laplacian_type=laplacian_type)
 
-    def forward(self, x, edge_list: list, edge_weight_list: list):
+    def forward(self, x):
         """Forward Pass.
 
         Args:

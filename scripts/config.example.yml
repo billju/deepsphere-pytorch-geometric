@@ -6,13 +6,13 @@ IMAGE PARAMS:
 
 MODEL PARAMS:
   partition: [0.7,0.2,0.1]
-  batch_size: 64
+  batch_size: 16
   learning_rate: 0.001
   n_epochs: 30
   kernel_size: 3
 
 SAVING:
-  path_to_data: "/data/climate/data_5_all"
+  path_to_data: "/home/joey_yu/Datasets/data_5_all"
   tensorboard_path: "./"
   model_save_path: "./"
 
@@ -33,7 +33,7 @@ STEP:
 WARMUP:
   warmuplr_warmup_start_value: 0.001
   warmuplr_warmup_end_value: 0.001
-  warmuplr_warmup_duration: 1
+  warmuplr_warmup_duration: 2
 
 EARLY_STOPPING:
   earlystopping_patience: 30
