@@ -1,24 +1,25 @@
 """Datasets for reduced atmospheric river and tropical cyclone detection dataset.
 """
 
-
 import itertools
 import os
+import shutil
 
 import numpy as np
-from torch.utils.data import Dataset
-from torchvision.datasets.utils import download_and_extract_archive
+import torch
+from torch_geometric.data import Dataset, Data
+from deepsphere.utils.get_ico_coords import get_ico_coords
+
 
 # pylint: disable=C0330
 
 
 class ARTCDataset(Dataset):
-    """Dataset for reduced atmospheric river and tropical cyclone dataset.
+    """
+    Dataset for reduced atmospheric river and tropical cyclone dataset.
     """
 
-    resource = "http://island.me.berkeley.edu/ugscnn/data/climate_sphere_l5.zip"
-
-    def __init__(self, path, indices=None, transform_data=None, transform_labels=None, download=False):
+    def __init__(self, path, indices=None, transform=None):
         """Initialization.
 
         Args:
@@ -28,75 +29,20 @@ class ARTCDataset(Dataset):
             transform_labels (:obj:`transform.Compose`): List of torchvision transforms for the labels.
             download (bool): Flag to decide if data should be downloaded or not.
         """
+        super(ARTCDataset, self).__init__(None, transform, None, None)
         self.path = path
-        if download:
-            self.download()
         self.files = indices if indices is not None else os.listdir(self.path)
-        self.transform_data = transform_data
-        self.transform_labels = transform_labels
 
-    @property
-    def indices(self):
-        """Get files.
-
-        Returns:
-            list: List of strings, which represent the files contained in the dataset.
-        """
-        return self.files
-
-    def __len__(self):
-        """Get length of dataset.
-
-        Returns:
-            int: Number of files contained in the dataset.
-        """
+    def len(self):
         return len(self.files)
 
-    def __getitem__(self, idx):
-        """Get an item from the dataset.
-
-        Args:
-            idx (int): The index of the desired datapoint.
-
-        Returns:
-            obj, obj: The data and labels corresponding to the desired index. The type depends on the applied transforms.
-        """
+    def get(self, idx):
         item = np.load(os.path.join(self.path, self.files[idx]))
+        runs = int(self.files[idx][-10])
         data, labels = item["data"], item["labels"]
-        if self.transform_data:
-            data = self.transform_data(data)
-        if self.transform_labels:
-            labels = self.transform_labels(labels)
-        return data, labels
-
-    def get_runs(self, runs):
-        """Get datapoints corresponding to specific runs.
-
-        Args:
-            runs (list): List of desired runs.
-
-        Returns:
-            list: List of strings, which represents the files in the dataset, which belong to one of the desired runs.
-        """
-        files = []
-        for file in self.files:
-            for i in runs:
-                if file.endswith("{}-mesh.npz".format(i)):
-                    files.append(file)
-        return files
-
-    def download(self):
-        """Download the dataset if it doesn't already exist.
-        """
-        if not self.check_exists():
-            download_and_extract_archive(self.resource, download_root=os.path.split(self.path)[0])
-        else:
-            print("Data already exists")
-
-    def check_exists(self):
-        """Check if dataset already exists.
-        """
-        return os.path.exists(self.path)
+        return Data(x=torch.FloatTensor(data.T),
+                    y=torch.FloatTensor(labels.T),
+                    runs=torch.LongTensor([runs]))
 
 
 class ARTCTemporaldataset(ARTCDataset):
@@ -104,15 +50,15 @@ class ARTCTemporaldataset(ARTCDataset):
     """
 
     def __init__(
-        self,
-        path,
-        sequence_length,
-        prediction_shift=0,
-        indices=None,
-        transform_image=None,
-        transform_labels=None,
-        transform_sample=None,
-        download=False,
+            self,
+            path,
+            sequence_length,
+            prediction_shift=0,
+            indices=None,
+            transform_image=None,
+            transform_labels=None,
+            transform_sample=None,
+            download=False,
     ):
         """Initialization. Sort by run and sort each run by date and time. The samples at the tendo of each run are invalid and are removed.
         The list is then flattened. Self.allowed contains the list of all valid indices. Self.files contains all indices for the construction
@@ -133,7 +79,8 @@ class ARTCTemporaldataset(ARTCDataset):
         self.sequence_length = sequence_length
         self.prediction_shift = prediction_shift
         sorted_by_run_and_date = [sorted(self.get_runs([i])) for i in [1, 2, 3, 4, 6]]
-        self.allowed = list(itertools.chain(*[run[: -(self.sequence_length + self.prediction_shift)] for run in sorted_by_run_and_date]))
+        self.allowed = list(itertools.chain(
+            *[run[: -(self.sequence_length + self.prediction_shift)] for run in sorted_by_run_and_date]))
         self.files = list(itertools.chain(*sorted_by_run_and_date))
 
     def __len__(self):
@@ -171,3 +118,13 @@ class ARTCTemporaldataset(ARTCDataset):
         if self.transform_sample:
             data = self.transform_sample(data)
         return data, labels
+
+
+if __name__ == '__main__':
+    from torch_geometric.data import DenseDataLoader
+    dataset = ARTCDataset('saved/raw/data_5_all')
+    loader = DenseDataLoader(dataset, 4, shuffle=True)
+
+    print(len(dataset))
+    for x in loader:
+        print(x)
