@@ -14,11 +14,12 @@ from ignite.engine import Engine, Events, create_supervised_evaluator
 from ignite.handlers import EarlyStopping, TerminateOnNan
 from ignite.metrics import EpochMetric, RunningAverage
 from ignite.contrib.handlers import ProgressBar
+from ignite.utils import convert_tensor
 
 from sklearn.model_selection import train_test_split
 from torch_geometric.data import DenseDataLoader
 
-from deepsphere.data.datasets.dataset import ARTCDataset
+from deepsphere.data.datasets.dataset import ARTCDataset, ARTCH5Dataset
 from deepsphere.data.transforms.transforms import Normalize
 from deepsphere.models.spherical_unet.unet_model import SphericalUNet
 from deepsphere.utils.initialization import init_device
@@ -120,12 +121,12 @@ def get_dataloaders(parser_args):
     means_path = parser_args.means_path
     stds_path = parser_args.stds_path
 
-    data = ARTCDataset(path=path_to_data)
-    train_indices, temp = train_test_split(data.files, train_size=partition[0], random_state=seed)
+    data = ARTCDataset(path_to_data)
+    train_indices, temp = train_test_split(data.idxs, train_size=partition[0], random_state=seed)
     val_indices, _ = train_test_split(temp, test_size=partition[2] / (partition[1] + partition[2]), random_state=seed)
 
     if (means_path is None) or (stds_path is None):
-        train_set_stats = ARTCDataset(path=path_to_data, indices=train_indices)
+        train_set_stats = ARTCDataset(path_to_data, indices=train_indices)
         means, stds = stats_extractor(train_set_stats)
         np.save("./means.npy", means)
         np.save("./stds.npy", stds)
@@ -137,14 +138,15 @@ def get_dataloaders(parser_args):
             print("No means or stds were provided. Or path names incorrect.")
 
     train_set = ARTCDataset(
-        path=path_to_data, indices=train_indices, transform=Normalize(means, stds)
+        path_to_data, indices=train_indices, transform=Normalize(means, stds)
     )
     validation_set = ARTCDataset(
-        path=path_to_data, indices=val_indices, transform=Normalize(means, stds)
+        path_to_data, indices=val_indices, transform=Normalize(means, stds)
     )
 
-    dataloader_train = DenseDataLoader(train_set, batch_size=parser_args.batch_size, shuffle=True, num_workers=4)
-    dataloader_validation = DenseDataLoader(validation_set, batch_size=parser_args.batch_size, shuffle=False, num_workers=4)
+    dataloader_train = DenseDataLoader(train_set, batch_size=parser_args.batch_size, shuffle=True, num_workers=1)
+    dataloader_validation = DenseDataLoader(validation_set, batch_size=parser_args.batch_size, shuffle=False,
+                                            num_workers=1)
     return dataloader_train, dataloader_validation
 
 
@@ -160,7 +162,7 @@ def main(parser_args):
 
     unet = SphericalUNet(parser_args.pooling_class, parser_args.n_pixels, parser_args.depth, parser_args.laplacian_type,
                          parser_args.kernel_size)
-    #unet = torch.jit.script(unet)
+    # unet = torch.jit.script(unet)
     unet, device = init_device(parser_args.device, unet)
     lr = parser_args.learning_rate
     optimizer = optim.Adam(unet.parameters(), lr=lr)
@@ -201,9 +203,19 @@ def main(parser_args):
 
     RunningAverage(output_transform=lambda x: x['loss']).attach(engine_train, 'loss')
 
+    def prepare_batch(batch, device, non_blocking):
+        """Prepare batch for training: pass to a device with options.
+
+        """
+        return (
+            convert_tensor(batch.x, device=device, non_blocking=non_blocking),
+            convert_tensor(batch.y, device=device, non_blocking=non_blocking),
+        )
+
     engine_validate = create_supervised_evaluator(
         model=unet, metrics={"AP": EpochMetric(average_precision_compute_fn)}, device=device,
-        output_transform=validate_output_transform
+        output_transform=validate_output_transform,
+        prepare_batch=prepare_batch
     )
 
     engine_train.add_event_handler(Events.EPOCH_STARTED, lambda x: print("Starting Epoch: {}".format(x.state.epoch)))
@@ -266,7 +278,8 @@ def main(parser_args):
     engine_validate.add_event_handler(Events.EPOCH_COMPLETED, scheduler)
 
     earlystopper = EarlyStopping(
-        patience=parser_args.earlystopping_patience, score_function=lambda x: -x.state.metrics["AP"][1],
+        patience=parser_args.earlystopping_patience,
+        score_function=lambda x: -x.state.metrics["AP"][1],
         trainer=engine_train
     )
     engine_validate.add_event_handler(Events.EPOCH_COMPLETED, earlystopper)

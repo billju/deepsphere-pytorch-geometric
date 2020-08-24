@@ -2,7 +2,7 @@ IMAGE PARAMS:
   pooling_class: "icosahedron"
   n_pixels: 10242
   depth: 6
-  laplacian_type: "combinatorial"
+  laplacian_type: "normalized"
 
 MODEL PARAMS:
   partition: [0.7,0.2,0.1]
@@ -12,7 +12,7 @@ MODEL PARAMS:
   kernel_size: 3
 
 SAVING:
-  path_to_data: "/home/joey_yu/Datasets/data_5_all"
+  path_to_data: "./data"
   tensorboard_path: "./"
   model_save_path: "./"
 

@@ -3,7 +3,7 @@
 # pylint: disable=W0221
 import torch
 from torch import nn
-from deepsphere.layers.chebyshev import *
+from torch_geometric.nn import ChebConv
 
 
 class SphericalChebConv(nn.Module):
@@ -19,12 +19,23 @@ class SphericalChebConv(nn.Module):
             self.register_buffer("edge_weight", edge_weight)
 
         self.register_buffer('lambda_max', torch.tensor(2., dtype=torch.float32))
-        self.chebconv = DenseChebConv(in_channels, out_channels, kernel_size,
-                                      normalization='sym' if laplacian_type == 'normalized' else None)
-
+        self.chebconv = ChebConv(in_channels, out_channels, kernel_size,
+                                 normalization='sym' if laplacian_type == 'normalized' else None)
 
     def forward(self, x):
-        x = self.chebconv(x, self.edge_index, self.edge_weight, self.lambda_max)
+        """
+        batch, N, _ = x.shape
+
+        expand_index = self.edge_index.unsqueeze(1) + torch.arange(batch,
+                                                                   dtype=self.edge_index.dtype,
+                                                                   device=x.device).unsqueeze(1) * N
+        expand_index = expand_index.view(2, -1)
+        x = x.contiguous().view(batch * N, -1)
+        edge_weight = self.edge_weight
+        if edge_weight is not None:
+            edge_weight = edge_weight.repeat(batch)
+        """
+        x = self.chebconv(x, self.edge_index, self.edge_weight, lambda_max=self.lambda_max)
         return x
 
 
@@ -43,7 +54,7 @@ class SphericalChebBN(nn.Module):
         super().__init__()
         self.spherical_cheb = SphericalChebConv(in_channels, out_channels, kernel_size,
                                                 **kwargs)
-        self.batchnorm = nn.BatchNorm1d(out_channels)
+        self.batchnorm = nn.BatchNorm1d(out_channels, affine=False)
 
     def forward(self, x):
         """Forward Pass.
@@ -55,8 +66,8 @@ class SphericalChebBN(nn.Module):
             :obj:`torch.tensor`: output [batch x vertices x channels/features]
         """
         x = self.spherical_cheb(x)
-        x = self.batchnorm(x.transpose(1, 2)).relu()
-        return x.transpose(1, 2)
+        x = self.batchnorm(x.view(-1, x.shape[-1])).relu().view(*x.shape)
+        return x
 
 
 class SphericalChebBNPool(nn.Module):

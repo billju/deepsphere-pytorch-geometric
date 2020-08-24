@@ -2,7 +2,6 @@
 """
 # pylint: disable=W0221
 from torch import nn
-from torch_geometric import nn as geo_nn
 from deepsphere.models.spherical_unet.utils import SphericalChebBN, SphericalChebBNPool, SphericalChebConv
 
 
@@ -83,7 +82,6 @@ class Encoder(nn.Module):
 
         Args:
             pooling (:obj:`torch.nn.Module`): pooling layer.
-            laps (list): List of laplacians.
             kernel_size (int): polynomial degree.
         """
         super().__init__()

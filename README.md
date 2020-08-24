@@ -2,6 +2,11 @@
 
 [![Documentation Status](https://readthedocs.org/projects/deepsphere/badge/?version=latest)](https://deepsphere.readthedocs.io/en/latest/?badge=latest)
 
+This fork using [pytorch-geometric](https://github.com/rusty1s/pytorch_geometric) to build the spherical convolution operation,
+thus remove the dependency of custom PyGSP package, make deepsphere more easily reproducible.
+Currently only support icosahedron sampling grid..
+
+
 This repository contains the PyTorch implementation of a novel methodology for applying [convolutional networks to spherical data through a graph-based discretization](https://openreview.net/pdf?id=B1e3OlStPB "This link takes you to the DeepSphere paper which was accepted at ICLR 2020").
 
 - [Data](#data)
@@ -23,7 +28,7 @@ The task is to learn how to infer the correct class for each pixel given the 16 
 
 # Quick Start
 
-In order to reproduce the results obtained, it is necessary to install the PyGSP branch containing the graph processing for equiangular, icosahedron, and healpix samplings. In future versions, PyGSP will be in the requirements. Subsequently, please refer yourself to the [Pytorch Getting Started information page](https://pytorch.org/get-started/locally/) to run the correct `conda install` command corresponding to your operating system, python version and cuda version.
+Please refer yourself to the [Pytorch Getting Started information page](https://pytorch.org/get-started/locally/) to run the correct `conda install` command corresponding to your operating system, python version and cuda version.
 Once those requirements are met, you can install the `deepsphere` package in your environment.
 
 Our recommendation for a linux based machine is:
@@ -33,10 +38,18 @@ conda create --name deepsphere python=3.7
 
 source activate deepsphere
 
-pip install git+https://github.com/Droxef/pygsp.git@6b216395beae25bf062d13fbf9abc251eeb5bbff#egg=PyGSP
+conda install pytorch==1.5.0 torchvision==0.6.0 cudatoolkit=10.2 -c pytorch
 
-conda install pytorch=1.3.1 torchvision=0.4.2 cudatoolkit=10.0 -c pytorch
+pip install torch-scatter==latest+cu102 -f https://pytorch-geometric.com/whl/torch-1.5.0.html
+pip install torch-sparse==latest+cu102 -f https://pytorch-geometric.com/whl/torch-1.5.0.html
+pip install torch-cluster==latest+cu102 -f https://pytorch-geometric.com/whl/torch-1.5.0.html
+pip install torch-spline-conv==latest+cu102 -f https://pytorch-geometric.com/whl/torch-1.5.0.html
+pip install torch-geometric
 
+# install other dependency in requirements.txt as usual
+...
+
+# you can skip this step
 pip install deepsphere
 ```
 
@@ -51,7 +64,7 @@ Using the predefined parameters you can train and validate the model using the f
 python run_ar_tc.py --config-file config.example.yml --gpu
 ```
 
-If you don't have the data yet, please add create the folder ```/data/climate/``` (or change the file location in the yaml file) and add ```download True``` to the command.
+The data will be downloaded automatically.
 # Mathematical Background
 
 The Deepsphere package uses the manifold of the sphere to perform the convolutions on the data. Underlying the application of convolutional networks to spherical data through a graph-based discretization lies the field of Graph Signal Processing (GSP). Graph Signal Processing is a field trying to define classical spectral methods on graphs, similarly to the theories existing in the time domain.

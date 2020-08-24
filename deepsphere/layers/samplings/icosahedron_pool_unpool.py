@@ -53,7 +53,7 @@ class IcosahedronUnpool(nn.Module):
         unpool_order = order + 1
         additional_pixels = int((10 * math.pow(4, unpool_order)) + 2)
         subset_pixels_add = additional_pixels - M
-        return F.pad(x, (0, 0, 0, subset_pixels_add, 0, 0), "constant", value=1)
+        return F.pad(x, (0, 0, 0, subset_pixels_add, 0, 0))
 
 
 class Icosahedron:
